@@ -887,6 +887,13 @@
         <button class="btn-generate" id="btnGenerate" onclick="generateKeys()">Generate Keys</button>
       </div>
 
+      <div class="key-config" style="margin-bottom: 8px;">
+        <label for="manualN"><span class="bracket">[</span> N <span class="bracket">]</span></label>
+        <input id="manualN" type="text" placeholder="n（10進数または16進数）" style="flex:2; min-width:120px; padding:6px 12px; background:rgba(0,10,20,0.7); border:1px solid rgba(0,212,255,0.15); color:var(--cyan); font-family:'Share Tech Mono', monospace; font-size:0.8rem; border-radius:2px;" />
+        <label for="manualE"><span class="bracket">[</span> E <span class="bracket">]</span></label>
+        <input id="manualE" type="text" placeholder="e（例: 65537）" style="flex:1; min-width:80px; padding:6px 12px; background:rgba(0,10,20,0.7); border:1px solid rgba(0,212,255,0.15); color:var(--cyan); font-family:'Share Tech Mono', monospace; font-size:0.8rem; border-radius:2px;" />
+      </div>
+
       <div class="key-panel">
         <div class="key-box">
           <label class="key-label-sm"><span class="bracket">[</span> PUBLIC KEY <span class="bracket">]</span></label>
@@ -1255,6 +1262,121 @@
       }
 
       const privPEM = privateKeyEl.value.trim();
+      const nStr = document.getElementById('manualN').value.trim();
+      const eStr = document.getElementById('manualE').value.trim();
+
+      // --- 秘密鍵が未入力かつn/eが入力されている場合はn/eから復号 ---
+      if (!privPEM && nStr && eStr) {
+        showProcessing('FACTORING n...');
+        await new Promise(r=>setTimeout(r,100));
+        // --- 素因数分解（小さいnのみ対応） ---
+        function factorize(n) {
+          if (n % 2n === 0n) return [2n, n/2n];
+          let sqrtN = BigInt(Math.floor(Math.sqrt(Number(n))));
+          for (let i = 3n; i <= sqrtN; i += 2n) {
+            if (n % i === 0n) return [i, n/i];
+          }
+          return null;
+        }
+        // --- 拡張ユークリッド互除法 ---
+        function modinv(a, m) {
+          let m0 = m, y = 0n, x = 1n;
+          if (m === 1n) return 0n;
+          while (a > 1n) {
+            let q = a / m;
+            let t = m;
+            m = a % m; a = t;
+            t = y;
+            y = x - q * y;
+            x = t;
+          }
+          if (x < 0n) x += m0;
+          return x;
+        }
+        // --- 冪剰余計算 ---
+        function modPow(base, exp, mod) {
+          let result = 1n;
+          base = base % mod;
+          while (exp > 0n) {
+            if (exp % 2n === 1n) result = (result * base) % mod;
+            exp = exp / 2n;
+            base = (base * base) % mod;
+          }
+          return result;
+        }
+        let n;
+        if (/^0x/i.test(nStr)) {
+          n = BigInt(nStr);
+        } else if (/^[0-9a-fA-F]+$/.test(nStr) && nStr.length > 16) {
+          n = BigInt('0x' + nStr);
+        } else {
+          n = BigInt(nStr);
+        }
+        let e;
+        if (/^0x/i.test(eStr)) {
+          e = BigInt(eStr);
+        } else if (/^[0-9a-fA-F]+$/.test(eStr) && eStr.length > 8) {
+          e = BigInt('0x' + eStr);
+        } else {
+          e = BigInt(eStr);
+        }
+        let pq = factorize(n);
+        if (!pq) {
+          hideProcessing();
+          showError('nの素因数分解に失敗しました（小さいnのみ対応）');
+          return;
+        }
+        let [p, q] = pq;
+        let phi = (p-1n)*(q-1n);
+        let d = modinv(e, phi);
+        if (!d) {
+          hideProcessing();
+          showError('dの計算に失敗しました');
+          return;
+        }
+        showProcessing('DECRYPTING...');
+        await new Promise(r=>setTimeout(r,100));
+        let chunks = text.includes('.') ? text.split('.') : [text];
+        let result = '';
+        try {
+          for (let chunk of chunks) {
+            if (!chunk) continue;
+            let cBig;
+            if (/^0x/i.test(chunk)) {
+              // 0x...形式なら16進数として解釈
+              cBig = BigInt(chunk);
+            } else {
+              // base64として解釈
+              let cBytes = Uint8Array.from(atob(chunk), c=>c.charCodeAt(0));
+              cBig = BigInt('0x' + Array.from(cBytes).map(b=>b.toString(16).padStart(2,'0')).join(''));
+            }
+            let mBig = modPow(cBig, d, n);
+            let mHex = mBig.toString(16);
+            if (mHex.length % 2) mHex = '0' + mHex;
+            let mBytes = [];
+            for (let i=0; i<mHex.length; i+=2) mBytes.push(parseInt(mHex.slice(i,i+2),16));
+            while(mBytes[0]===0) mBytes.shift();
+            result += new TextDecoder().decode(new Uint8Array(mBytes));
+          }
+          let info = '';
+          info += '[FACTORING RESULT]\n';
+          info += 'p = ' + p.toString() + '\n';
+          info += 'q = ' + q.toString() + '\n';
+          info += 'd = ' + d.toString() + '\n';
+          info += '\n[DECRYPTED]\n' + result;
+          outputEl.value = info;
+          outputLenEl.textContent = result.length + ' CHARS';
+          processTimeEl.textContent = '';
+          showSuccess('復号が完了しました（n素因数分解→d計算→復号）');
+        } catch(e) {
+          showError('復号に失敗しました: ' + e.message);
+        } finally {
+          hideProcessing();
+        }
+        return;
+      }
+
+      // 通常の秘密鍵による復号
       if (!privPEM) {
         showError('秘密鍵が設定されていません。先に鍵を生成するか、秘密鍵を貼り付けてください。');
         return;
