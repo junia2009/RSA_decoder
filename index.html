@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSA DECODER</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap');
+
+    :root {
+      --cyan: #00d4ff;
+      --cyan-dim: rgba(0, 212, 255, 0.3);
+      --cyan-glow: rgba(0, 212, 255, 0.15);
+      --orange: #ff6a00;
+      --orange-dim: rgba(255, 106, 0, 0.3);
+      --green: #00ff88;
+      --green-dim: rgba(0, 255, 136, 0.3);
+      --red: #ff4444;
+      --blue: #1e90ff;
+      --bg-dark: #0a0e17;
+      --panel-bg: rgba(0, 20, 40, 0.6);
+      --text: #c0dce8;
+      --text-bright: #e8f4f8;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Share Tech Mono', monospace;
+      background: var(--bg-dark);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* === CUSTOM SCROLLBAR === */
+    body::-webkit-scrollbar { width: 6px; }
+    body::-webkit-scrollbar-track { background: rgba(0, 10, 20, 0.8); }
+    body::-webkit-scrollbar-thumb { background: var(--cyan-dim); border-radius: 3px; }
+    body::-webkit-scrollbar-thumb:hover { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+
+    /* === BACKGROUND GRID === */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridShift 20s linear infinite;
+    }
+
+    @keyframes gridShift {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(40px, 40px); }
+    }
+
+    /* === SCAN LINE === */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -100%;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      box-shadow: 0 0 30px var(--cyan), 0 0 60px var(--cyan-dim);
+      animation: scanLine 4s ease-in-out infinite;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    @keyframes scanLine {
+      0% { top: -5%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { top: 105%; opacity: 0; }
+    }
+
+    /* === FLOATING PARTICLES === */
+    .particles {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .particle {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--cyan);
+      animation: float linear infinite;
+      opacity: 0;
+    }
+
+    @keyframes float {
+      0% { transform: translateY(100vh) scale(0); opacity: 0; }
+      10% { opacity: 0.8; }
+      90% { opacity: 0.8; }
+      100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+    }
+
+    /* === CONTAINER === */
+    .container {
+      position: relative;
+      width: 100%;
+      max-width: 860px;
+      margin: auto;
+      padding: 20px;
+      z-index: 10;
+    }
+
+    /* === HUD FRAME === */
+    .hud-frame {
+      position: relative;
+      background: var(--panel-bg);
+      border: 1px solid var(--cyan-dim);
+      border-radius: 4px;
+      padding: 36px 32px 28px;
+      box-shadow:
+        0 0 30px rgba(0, 212, 255, 0.05),
+        inset 0 0 30px rgba(0, 212, 255, 0.02);
+    }
+
+    /* Corner decorations */
+    .hud-frame::before,
+    .hud-frame::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: var(--cyan);
+      border-style: solid;
+    }
+
+    .hud-frame::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+    .hud-frame::after { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+
+    .corner-bl, .corner-br {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: var(--cyan);
+      border-style: solid;
+    }
+
+    .corner-bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+    .corner-br { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+    /* === HEADER === */
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .header-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .header-line .deco {
+      width: 40px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan));
+    }
+
+    .header-line .deco:last-child {
+      background: linear-gradient(90deg, var(--cyan), transparent);
+    }
+
+    .arc-reactor {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: reactorPulse 2s ease-in-out infinite;
+      position: relative;
+    }
+
+    .arc-reactor::before {
+      content: '';
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--cyan);
+      box-shadow: 0 0 12px var(--cyan), inset 0 0 8px var(--cyan-glow);
+    }
+
+    .arc-reactor::after {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      border-radius: 50%;
+      border: 1px dashed var(--cyan-dim);
+      animation: reactorSpin 6s linear infinite;
+    }
+
+    @keyframes reactorPulse {
+      0%, 100% { box-shadow: 0 0 15px var(--cyan-dim); }
+      50% { box-shadow: 0 0 30px var(--cyan-dim), 0 0 60px rgba(0, 212, 255, 0.1); }
+    }
+
+    @keyframes reactorSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      color: var(--cyan);
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-shadow: 0 0 20px var(--cyan-dim);
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      font-size: 0.7rem;
+      color: var(--cyan-dim);
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.08);
+      margin-bottom: 20px;
+      font-size: 0.7rem;
+      color: var(--cyan-dim);
+      letter-spacing: 1px;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #00ff88;
+      box-shadow: 0 0 8px #00ff88;
+      margin-right: 6px;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .status-bar .time { color: var(--orange-dim); }
+
+    /* === SECTION DIVIDER === */
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 20px 0 14px;
+    }
+
+    .section-divider .line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.15), transparent);
+    }
+
+    .section-divider .section-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.65rem;
+      color: var(--cyan-dim);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* === KEY SIZE SELECTOR === */
+    .key-config {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .key-config label {
+      margin-bottom: 0;
+    }
+
+    .key-label-sm {
+      font-size: 0.65rem;
+    }
+
+    .key-config select {
+      padding: 6px 12px;
+      background: rgba(0, 10, 20, 0.7);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      color: var(--cyan);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.8rem;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .key-config select:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan-dim);
+    }
+
+    .key-config select option {
+      background: #0a0e17;
+      color: var(--cyan);
+    }
+
+    .btn-generate {
+      padding: 6px 18px;
+      border: 1px solid var(--green-dim);
+      border-radius: 2px;
+      background: transparent;
+      color: var(--green);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-generate:hover {
+      border-color: var(--green);
+      box-shadow: 0 0 20px var(--green-dim), inset 0 0 20px rgba(0, 255, 136, 0.05);
+      text-shadow: 0 0 10px var(--green);
+    }
+
+    .btn-generate:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* === KEY DISPLAY === */
+    .key-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .key-box {
+      position: relative;
+    }
+
+    .key-box textarea {
+      width: 100%;
+      height: 100px;
+      padding: 10px;
+      border: 1px solid rgba(0, 212, 255, 0.12);
+      border-radius: 2px;
+      background: rgba(0, 10, 20, 0.7);
+      color: var(--green);
+      font-size: 0.72rem;
+      font-family: 'Share Tech Mono', monospace;
+      resize: vertical;
+      transition: all 0.3s;
+      line-height: 1.5;
+    }
+
+    .key-box textarea:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.1), inset 0 0 15px rgba(0, 212, 255, 0.03);
+    }
+
+    .key-box textarea::placeholder {
+      color: rgba(0, 212, 255, 0.25);
+      letter-spacing: 1px;
+    }
+
+    .key-box textarea::-webkit-scrollbar { width: 4px; }
+    .key-box textarea::-webkit-scrollbar-track { background: transparent; }
+    .key-box textarea::-webkit-scrollbar-thumb { background: var(--cyan-dim); border-radius: 2px; }
+
+    .key-box .btn-copy-key {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      padding: 2px 8px;
+      font-size: 0.55rem;
+      font-family: 'Orbitron', sans-serif;
+      background: rgba(0, 212, 255, 0.05);
+      color: var(--cyan-dim);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .key-box .btn-copy-key:hover {
+      background: rgba(0, 212, 255, 0.1);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .key-box .btn-copy-key.copied {
+      border-color: #00ff88;
+      color: #00ff88;
+    }
+
+    /* === FILE DROP === */
+    .file-drop {
+      border: 1px dashed var(--cyan-dim);
+      border-radius: 2px;
+      padding: 14px;
+      text-align: center;
+      color: rgba(0, 212, 255, 0.35);
+      font-size: 0.75rem;
+      margin-bottom: 18px;
+      transition: all 0.3s;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .file-drop::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, var(--cyan-glow), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s;
+    }
+
+    .file-drop:hover::before,
+    .file-drop.dragover::before {
+      transform: translateX(100%);
+    }
+
+    .file-drop:hover,
+    .file-drop.dragover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .file-drop input { display: none; }
+
+    /* === LABELS === */
+    label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--cyan);
+      margin-bottom: 8px;
+      font-size: 0.75rem;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 500;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    label .bracket { color: var(--orange-dim); font-size: 0.85rem; }
+
+    /* === TEXTAREA === */
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 14px;
+      border: 1px solid rgba(0, 212, 255, 0.12);
+      border-radius: 2px;
+      background: rgba(0, 10, 20, 0.7);
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-family: 'Share Tech Mono', monospace;
+      resize: vertical;
+      transition: all 0.3s;
+      line-height: 1.6;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.1), inset 0 0 15px rgba(0, 212, 255, 0.03);
+    }
+
+    textarea::placeholder {
+      color: rgba(0, 212, 255, 0.35);
+      letter-spacing: 1px;
+    }
+
+    textarea::-webkit-scrollbar { width: 4px; }
+    textarea::-webkit-scrollbar-track { background: transparent; }
+    textarea::-webkit-scrollbar-thumb { background: var(--cyan-dim); border-radius: 2px; }
+
+    /* === SWAP BUTTON === */
+    .swap-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 10px 0;
+      position: relative;
+    }
+
+    .swap-row::before,
+    .swap-row::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+    }
+
+    .btn-swap {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--cyan-dim);
+      border-radius: 50%;
+      background: rgba(0, 20, 40, 0.8);
+      color: var(--cyan);
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 12px;
+    }
+
+    .btn-swap:hover {
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px var(--cyan-dim);
+      transform: rotate(180deg);
+    }
+
+    /* === OUTPUT WRAPPER === */
+    .output-wrapper { position: relative; }
+
+    .btn-copy {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 4px 10px;
+      font-size: 0.65rem;
+      font-family: 'Orbitron', sans-serif;
+      background: rgba(0, 212, 255, 0.05);
+      color: var(--cyan-dim);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .btn-copy:hover {
+      background: rgba(0, 212, 255, 0.1);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan-dim);
+    }
+
+    .btn-copy.copied {
+      border-color: #00ff88;
+      color: #00ff88;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+    }
+
+    /* === BUTTONS === */
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 20px;
+      border: 1px solid;
+      border-radius: 2px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, currentColor, transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .btn:hover::before { opacity: 0.05; }
+
+    .btn-decrypt {
+      border-color: var(--cyan-dim);
+      color: var(--cyan);
+    }
+
+    .btn-decrypt:hover {
+      border-color: var(--cyan);
+      box-shadow: 0 0 20px var(--cyan-dim), inset 0 0 20px rgba(0, 212, 255, 0.05);
+      text-shadow: 0 0 10px var(--cyan);
+    }
+
+    .btn-encrypt {
+      border-color: var(--orange-dim);
+      color: var(--orange);
+    }
+
+    .btn-encrypt:hover {
+      border-color: var(--orange);
+      box-shadow: 0 0 20px var(--orange-dim), inset 0 0 20px rgba(255, 106, 0, 0.05);
+      text-shadow: 0 0 10px var(--orange);
+    }
+
+    .btn-clear {
+      flex: 0.4;
+      border-color: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-clear:hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* === ERROR === */
+    .error {
+      background: rgba(255, 50, 50, 0.05);
+      border: 1px solid rgba(255, 50, 50, 0.2);
+      color: #ff4444;
+      padding: 10px 14px;
+      border-radius: 2px;
+      margin-top: 14px;
+      font-size: 0.8rem;
+      display: none;
+      letter-spacing: 1px;
+    }
+
+    .error::before {
+      content: '⚠ WARNING: ';
+      color: var(--orange);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+    }
+
+    /* === SUCCESS === */
+    .success {
+      background: rgba(0, 255, 136, 0.05);
+      border: 1px solid rgba(0, 255, 136, 0.2);
+      color: var(--green);
+      padding: 10px 14px;
+      border-radius: 2px;
+      margin-top: 14px;
+      font-size: 0.8rem;
+      display: none;
+      letter-spacing: 1px;
+    }
+
+    .success::before {
+      content: '✓ SUCCESS: ';
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+    }
+
+    /* === HUD DECORATIONS === */
+    .hud-deco-top {
+      position: absolute;
+      top: 8px;
+      left: 28px;
+      right: 28px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.55rem;
+      color: rgba(0, 212, 255, 0.15);
+      letter-spacing: 2px;
+      pointer-events: none;
+    }
+
+    .hud-deco-bottom {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-top: 20px;
+      opacity: 0.3;
+    }
+
+    .hud-deco-bottom span {
+      width: 3px;
+      height: 3px;
+      background: var(--cyan);
+      display: block;
+    }
+
+    .hud-deco-bottom span:nth-child(odd) { opacity: 0.4; }
+
+    /* === BYTE COUNTER === */
+    .byte-counter {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: rgba(0, 212, 255, 0.2);
+      margin-top: 4px;
+      letter-spacing: 1px;
+    }
+
+    /* === PROCESSING ANIMATION === */
+    .processing-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 10, 20, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      border-radius: 4px;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .processing-overlay.active { display: flex; }
+
+    .processing-ring {
+      width: 50px;
+      height: 50px;
+      border: 2px solid transparent;
+      border-top-color: var(--cyan);
+      border-right-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      position: relative;
+    }
+
+    .processing-ring::before {
+      content: '';
+      position: absolute;
+      inset: 6px;
+      border: 2px solid transparent;
+      border-top-color: var(--orange);
+      border-radius: 50%;
+      animation: spin 1.2s linear infinite reverse;
+    }
+
+    .processing-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.65rem;
+      color: var(--cyan-dim);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* === KEY STATUS INDICATOR === */
+    .key-status {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      font-size: 0.65rem;
+      letter-spacing: 1px;
+    }
+
+    .key-status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--cyan-dim);
+    }
+
+    .key-status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      transition: all 0.3s;
+    }
+
+    .key-status-dot.active {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 700px) {
+      .hud-frame { padding: 28px 18px 20px; }
+      h1 { font-size: 1.1rem; letter-spacing: 3px; }
+      .btn { font-size: 0.7rem; letter-spacing: 2px; padding: 10px 12px; }
+      .btn-group { flex-wrap: wrap; }
+      .btn-clear { flex: 1; }
+      .key-panel { grid-template-columns: 1fr; }
+      .key-config { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating particles -->
+  <div class="particles" id="particles"></div>
+
+  <div class="container">
+    <div class="hud-frame">
+      <div class="corner-bl"></div>
+      <div class="corner-br"></div>
+
+      <!-- HUD top deco -->
+      <div class="hud-deco-top">
+        <span>SYS.OK</span>
+        <span>RSA CRYPTOSYSTEM</span>
+        <span>v2.0.48</span>
+      </div>
+
+      <!-- Processing overlay -->
+      <div class="processing-overlay" id="processingOverlay">
+        <div class="processing-ring"></div>
+        <div class="processing-text" id="processingText">PROCESSING</div>
+      </div>
+
+      <!-- Header -->
+      <div class="header">
+        <div class="header-line">
+          <span class="deco"></span>
+          <div class="arc-reactor"></div>
+          <span class="deco"></span>
+        </div>
+        <h1>RSA DECODER</h1>
+        <div class="subtitle">Public Key Cryptography Interface</div>
+      </div>
+
+      <!-- Status Bar -->
+      <div class="status-bar">
+        <span><span class="status-dot"></span>SYSTEM ONLINE</span>
+        <span class="time" id="clock">00:00:00</span>
+      </div>
+
+      <!-- ======== KEY GENERATION SECTION ======== -->
+      <div class="section-divider">
+        <div class="line"></div>
+        <span class="section-title">🔑 Key Generation</span>
+        <div class="line"></div>
+      </div>
+
+      <div class="key-config">
+        <label for="keySize"><span class="bracket">[</span> KEY SIZE <span class="bracket">]</span></label>
+        <select id="keySize" title="RSA鍵のビット長を選択">
+          <option value="1024">1024 bit</option>
+          <option value="2048" selected>2048 bit</option>
+          <option value="4096">4096 bit</option>
+        </select>
+        <button class="btn-generate" id="btnGenerate" onclick="generateKeys()">Generate Keys</button>
+      </div>
+
+      <div class="key-panel">
+        <div class="key-box">
+          <label class="key-label-sm"><span class="bracket">[</span> PUBLIC KEY <span class="bracket">]</span></label>
+          <textarea id="publicKey" placeholder="// 公開鍵がここに表示されます..." spellcheck="false"></textarea>
+          <button class="btn-copy-key" onclick="copyKey('publicKey', this)">COPY</button>
+        </div>
+        <div class="key-box">
+          <label class="key-label-sm"><span class="bracket">[</span> PRIVATE KEY <span class="bracket">]</span></label>
+          <textarea id="privateKey" placeholder="// 秘密鍵がここに表示されます..." spellcheck="false"></textarea>
+          <button class="btn-copy-key" onclick="copyKey('privateKey', this)">COPY</button>
+        </div>
+      </div>
+
+      <div class="key-status">
+        <div class="key-status-item">
+          <div class="key-status-dot" id="pubKeyStatus"></div>
+          <span>PUBLIC KEY</span>
+        </div>
+        <div class="key-status-item">
+          <div class="key-status-dot" id="privKeyStatus"></div>
+          <span>PRIVATE KEY</span>
+        </div>
+      </div>
+
+      <!-- ======== ENCRYPT / DECRYPT SECTION ======== -->
+      <div class="section-divider">
+        <div class="line"></div>
+        <span class="section-title">🔐 Encrypt / Decrypt</span>
+        <div class="line"></div>
+      </div>
+
+      <!-- File Drop -->
+      <div class="file-drop" id="fileDrop">
+        ▸ ファイルをドラッグ＆ドロップ / クリックして選択
+        <input type="file" id="fileInput">
+      </div>
+
+      <!-- Input -->
+      <label><span class="bracket">[</span> INPUT STREAM <span class="bracket">]</span></label>
+      <textarea id="input" placeholder="// 暗号化するテキスト、または復号するBase64暗号文を入力..." spellcheck="false"></textarea>
+      <div class="byte-counter">
+        <span id="inputLen">0 CHARS</span>
+        <span>CTRL+ENTER → ENCRYPT</span>
+      </div>
+
+      <!-- Swap -->
+      <div class="swap-row">
+        <button class="btn-swap" onclick="swapFields()" title="入力と出力を入れ替え">⇅</button>
+      </div>
+
+      <!-- Output -->
+      <label><span class="bracket">[</span> OUTPUT STREAM <span class="bracket">]</span></label>
+      <div class="output-wrapper">
+        <textarea id="output" readonly placeholder="// 結果がここに表示されます..." spellcheck="false"></textarea>
+        <button class="btn-copy" onclick="copyOutput()">COPY</button>
+      </div>
+      <div class="byte-counter">
+        <span id="outputLen">0 CHARS</span>
+        <span id="processTime"></span>
+      </div>
+
+      <!-- Error / Success -->
+      <div class="error" id="error"></div>
+      <div class="success" id="success"></div>
+
+      <!-- Buttons -->
+      <div class="btn-group">
+        <button class="btn btn-encrypt" onclick="encrypt()">Encrypt</button>
+        <button class="btn btn-decrypt" onclick="decrypt()">Decrypt</button>
+        <button class="btn btn-clear" onclick="clearAll()">Clear</button>
+      </div>
+
+      <!-- Bottom deco -->
+      <div class="hud-deco-bottom">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // === DOM ELEMENTS ===
+    const inputEl = document.getElementById('input');
+    const outputEl = document.getElementById('output');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+    const fileDropEl = document.getElementById('fileDrop');
+    const fileInputEl = document.getElementById('fileInput');
+    const clockEl = document.getElementById('clock');
+    const inputLenEl = document.getElementById('inputLen');
+    const outputLenEl = document.getElementById('outputLen');
+    const processTimeEl = document.getElementById('processTime');
+    const overlay = document.getElementById('processingOverlay');
+    const processingTextEl = document.getElementById('processingText');
+    const publicKeyEl = document.getElementById('publicKey');
+    const privateKeyEl = document.getElementById('privateKey');
+    const pubKeyStatusEl = document.getElementById('pubKeyStatus');
+    const privKeyStatusEl = document.getElementById('privKeyStatus');
+    const keySizeEl = document.getElementById('keySize');
+    const btnGenerateEl = document.getElementById('btnGenerate');
+
+    // === STORED KEY PAIR (CryptoKey objects) ===
+    let storedKeyPair = null;
+
+    // === CLOCK ===
+    function updateClock() {
+      const now = new Date();
+      clockEl.textContent = now.toTimeString().split(' ')[0];
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // === CHAR COUNTERS ===
+    inputEl.addEventListener('input', () => {
+      inputLenEl.textContent = inputEl.value.length + ' CHARS';
+    });
+
+    // === KEY STATUS MONITORS ===
+    publicKeyEl.addEventListener('input', updateKeyStatus);
+    privateKeyEl.addEventListener('input', updateKeyStatus);
+
+    function updateKeyStatus() {
+      pubKeyStatusEl.classList.toggle('active', publicKeyEl.value.trim().length > 0);
+      privKeyStatusEl.classList.toggle('active', privateKeyEl.value.trim().length > 0);
+    }
+
+    // === PARTICLES ===
+    (function createParticles() {
+      const container = document.getElementById('particles');
+      for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDuration = (4 + Math.random() * 8) + 's';
+        p.style.animationDelay = Math.random() * 10 + 's';
+        p.style.width = p.style.height = (1 + Math.random() * 2) + 'px';
+        container.appendChild(p);
+      }
+    })();
+
+    // === PROCESSING ANIMATION ===
+    function showProcessing(text = 'PROCESSING') {
+      processingTextEl.textContent = text;
+      overlay.classList.add('active');
+    }
+
+    function hideProcessing() {
+      overlay.classList.remove('active');
+    }
+
+    // === MESSAGES ===
+    function showError(msg) {
+      successEl.style.display = 'none';
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    }
+
+    function showSuccess(msg) {
+      errorEl.style.display = 'none';
+      successEl.textContent = msg;
+      successEl.style.display = 'block';
+    }
+
+    function hideMessages() {
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+    }
+
+    // === UTILITY: ArrayBuffer <-> Base64 ===
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    // === UTILITY: PEM EXPORT / IMPORT ===
+    async function exportPublicKeyPEM(key) {
+      const exported = await crypto.subtle.exportKey('spki', key);
+      const b64 = arrayBufferToBase64(exported);
+      const lines = b64.match(/.{1,64}/g).join('\n');
+      return '-----BEGIN PUBLIC KEY-----\n' + lines + '\n-----END PUBLIC KEY-----';
+    }
+
+    async function exportPrivateKeyPEM(key) {
+      const exported = await crypto.subtle.exportKey('pkcs8', key);
+      const b64 = arrayBufferToBase64(exported);
+      const lines = b64.match(/.{1,64}/g).join('\n');
+      return '-----BEGIN PRIVATE KEY-----\n' + lines + '\n-----END PRIVATE KEY-----';
+    }
+
+    function pemToArrayBuffer(pem) {
+      const b64 = pem
+        .replace(/-----BEGIN [A-Z ]+-----/g, '')
+        .replace(/-----END [A-Z ]+-----/g, '')
+        .replace(/\s+/g, '');
+      return base64ToArrayBuffer(b64);
+    }
+
+    async function importPublicKey(pem) {
+      const buffer = pemToArrayBuffer(pem);
+      return crypto.subtle.importKey(
+        'spki',
+        buffer,
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        true,
+        ['encrypt']
+      );
+    }
+
+    async function importPrivateKey(pem) {
+      const buffer = pemToArrayBuffer(pem);
+      return crypto.subtle.importKey(
+        'pkcs8',
+        buffer,
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        true,
+        ['decrypt']
+      );
+    }
+
+    // === RSA KEY GENERATION ===
+    async function generateKeys() {
+      hideMessages();
+      const keySize = parseInt(keySizeEl.value);
+      btnGenerateEl.disabled = true;
+      showProcessing('GENERATING ' + keySize + '-BIT RSA KEY PAIR');
+
+      try {
+        const keyPair = await crypto.subtle.generateKey(
+          {
+            name: 'RSA-OAEP',
+            modulusLength: keySize,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: 'SHA-256',
+          },
+          true,
+          ['encrypt', 'decrypt']
+        );
+
+        storedKeyPair = keyPair;
+
+        const pubPEM = await exportPublicKeyPEM(keyPair.publicKey);
+        const privPEM = await exportPrivateKeyPEM(keyPair.privateKey);
+
+        publicKeyEl.value = pubPEM;
+        privateKeyEl.value = privPEM;
+
+        updateKeyStatus();
+        showSuccess(keySize + '-bit RSA鍵ペアを生成しました。');
+      } catch (e) {
+        showError('鍵の生成に失敗しました: ' + e.message);
+      } finally {
+        hideProcessing();
+        btnGenerateEl.disabled = false;
+      }
+    }
+
+    // === RSA ENCRYPT ===
+    // RSA-OAEP can only encrypt small data. For larger data we chunk it.
+    async function encrypt() {
+      hideMessages();
+      const text = inputEl.value.trim();
+      if (!text) {
+        showError('入力が空です。暗号化するテキストを入力してください。');
+        return;
+      }
+
+      const pubPEM = publicKeyEl.value.trim();
+      if (!pubPEM) {
+        showError('公開鍵が設定されていません。先に鍵を生成するか、公開鍵を貼り付けてください。');
+        return;
+      }
+
+      showProcessing('ENCRYPTING DATA');
+      const t0 = performance.now();
+
+      try {
+        let publicKey;
+        if (storedKeyPair) {
+          // Re-import from PEM in case user edited the key
+          try {
+            publicKey = await importPublicKey(pubPEM);
+          } catch {
+            publicKey = storedKeyPair.publicKey;
+          }
+        } else {
+          publicKey = await importPublicKey(pubPEM);
+        }
+
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text);
+
+        // Determine max chunk size based on key size
+        // RSA-OAEP with SHA-256: max = keySize/8 - 66 bytes
+        const exportedKey = await crypto.subtle.exportKey('spki', publicKey);
+        // Rough estimation from key export size
+        const keyInfo = await getKeyModulusLength(exportedKey);
+        const maxChunk = Math.floor(keyInfo / 8) - 66;
+
+        if (maxChunk <= 0) {
+          throw new Error('鍵サイズが小さすぎます。');
+        }
+
+        // Split data into chunks
+        const chunks = [];
+        for (let i = 0; i < data.length; i += maxChunk) {
+          chunks.push(data.slice(i, i + maxChunk));
+        }
+
+        // Encrypt each chunk
+        const encryptedChunks = [];
+        for (const chunk of chunks) {
+          const encrypted = await crypto.subtle.encrypt(
+            { name: 'RSA-OAEP' },
+            publicKey,
+            chunk
+          );
+          encryptedChunks.push(arrayBufferToBase64(encrypted));
+        }
+
+        // Join chunks with delimiter
+        const result = encryptedChunks.join('.');
+        outputEl.value = result;
+        outputLenEl.textContent = result.length + ' CHARS';
+        processTimeEl.textContent = 'PROCESSED IN ' + (performance.now() - t0).toFixed(1) + 'ms';
+        showSuccess('暗号化が完了しました。(' + chunks.length + ' チャンク)');
+      } catch (e) {
+        showError('暗号化に失敗しました: ' + e.message);
+      } finally {
+        hideProcessing();
+      }
+    }
+
+    // Helper to get modulus length from SPKI export
+    function getKeyModulusLength(spkiBuffer) {
+      // Read the modulus length from the DER-encoded SPKI structure
+      // For RSA, the modulus is the largest component
+      const bytes = new Uint8Array(spkiBuffer);
+      // RSA public key sizes: 1024->162, 2048->294, 4096->550 (approx SPKI length)
+      // Approximate modulus length from SPKI buffer size
+      if (bytes.length > 400) return 4096;
+      if (bytes.length > 250) return 2048;
+      return 1024;
+    }
+
+    // === RSA DECRYPT ===
+    async function decrypt() {
+      hideMessages();
+      const text = inputEl.value.trim();
+      if (!text) {
+        showError('入力が空です。復号する暗号文を入力してください。');
+        return;
+      }
+
+      const privPEM = privateKeyEl.value.trim();
+      if (!privPEM) {
+        showError('秘密鍵が設定されていません。先に鍵を生成するか、秘密鍵を貼り付けてください。');
+        return;
+      }
+
+      showProcessing('DECRYPTING DATA');
+      const t0 = performance.now();
+
+      try {
+        let privateKey;
+        if (storedKeyPair) {
+          try {
+            privateKey = await importPrivateKey(privPEM);
+          } catch {
+            privateKey = storedKeyPair.privateKey;
+          }
+        } else {
+          privateKey = await importPrivateKey(privPEM);
+        }
+
+        // Split by delimiter
+        const chunks = text.split('.');
+        const decoder = new TextDecoder();
+        let result = '';
+
+        for (const chunk of chunks) {
+          const encryptedBuffer = base64ToArrayBuffer(chunk);
+          const decrypted = await crypto.subtle.decrypt(
+            { name: 'RSA-OAEP' },
+            privateKey,
+            encryptedBuffer
+          );
+          result += decoder.decode(decrypted);
+        }
+
+        outputEl.value = result;
+        outputLenEl.textContent = result.length + ' CHARS';
+        processTimeEl.textContent = 'PROCESSED IN ' + (performance.now() - t0).toFixed(1) + 'ms';
+        showSuccess('復号が完了しました。');
+      } catch (e) {
+        showError('復号に失敗しました。正しい秘密鍵と暗号文であることを確認してください。');
+      } finally {
+        hideProcessing();
+      }
+    }
+
+    // === CLEAR ===
+    function clearAll() {
+      inputEl.value = '';
+      outputEl.value = '';
+      inputLenEl.textContent = '0 CHARS';
+      outputLenEl.textContent = '0 CHARS';
+      processTimeEl.textContent = '';
+      hideMessages();
+    }
+
+    // === SWAP ===
+    function swapFields() {
+      const temp = inputEl.value;
+      inputEl.value = outputEl.value;
+      outputEl.value = temp;
+      inputLenEl.textContent = inputEl.value.length + ' CHARS';
+      outputLenEl.textContent = outputEl.value.length + ' CHARS';
+      hideMessages();
+    }
+
+    // === COPY OUTPUT ===
+    function copyOutput() {
+      const text = outputEl.value;
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.btn-copy');
+        btn.textContent = 'COPIED ✓';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'COPY';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    // === COPY KEY ===
+    function copyKey(id, btn) {
+      const text = document.getElementById(id).value;
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'COPIED ✓';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'COPY';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    // === FILE DROP ===
+    fileDropEl.addEventListener('click', () => fileInputEl.click());
+
+    fileDropEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      fileDropEl.classList.add('dragover');
+    });
+
+    fileDropEl.addEventListener('dragleave', () => {
+      fileDropEl.classList.remove('dragover');
+    });
+
+    fileDropEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileDropEl.classList.remove('dragover');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInputEl.addEventListener('change', (e) => {
+      if (e.target.files.length) handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target.result;
+
+        // Auto-detect if it's a PEM key file
+        if (content.includes('-----BEGIN PUBLIC KEY-----')) {
+          publicKeyEl.value = content;
+          updateKeyStatus();
+          showSuccess('公開鍵ファイルを読み込みました。');
+        } else if (content.includes('-----BEGIN PRIVATE KEY-----')) {
+          privateKeyEl.value = content;
+          updateKeyStatus();
+          showSuccess('秘密鍵ファイルを読み込みました。');
+        } else if (content.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+          // PKCS#1 format — inform user
+          privateKeyEl.value = content;
+          updateKeyStatus();
+          showError('PKCS#1形式の鍵です。PKCS#8形式（BEGIN PRIVATE KEY）に変換してください。');
+        } else {
+          inputEl.value = content;
+          inputLenEl.textContent = content.length + ' CHARS';
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // === KEYBOARD SHORTCUT ===
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        encrypt();
+      }
+      if (e.key === 'Enter' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        decrypt();
+      }
+    });
+
+    // === TYPEWRITER TITLE EFFECT ===
+    (function typewriterBoot() {
+      const sub = document.querySelector('.subtitle');
+      const text = sub.textContent.trim();
+      sub.textContent = '';
+      let i = 0;
+      const interval = setInterval(() => {
+        sub.textContent += text[i];
+        i++;
+        if (i >= text.length) clearInterval(interval);
+      }, 40);
+    })();
+  </script>
+</body>
+</html>
